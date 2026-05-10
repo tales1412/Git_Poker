@@ -1,81 +1,131 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using DG.Tweening;
 
 public class Deck : MonoBehaviour
 {
+    // ─────────────────────────────────────────────
+    // REFERÊNCIAS
+    // ─────────────────────────────────────────────
+    [Header("Referências")]
     public GameObject cartaPrefab;
-    public Transform[] posicoesJogador;  // 2 slots para o jogador
-    public Transform[] posicoesIA;       // 2 slots para a IA
-    public Transform posicaoDeck;        // ponto de origem das cartas
+    public Transform posicaoDeck;
 
-    private List<Card> baralho = new List<Card>();
+    // ─────────────────────────────────────────────
+    // BARALHO
+    // ─────────────────────────────────────────────
+    private List<PokerCard> baralho = new List<PokerCard>();
+    private int indiceAtual = 0;
 
-    void Start()
+    // ─────────────────────────────────────────────
+    // UNITY
+    // ─────────────────────────────────────────────
+    void Awake()
     {
         CriarBaralho();
         Embaralhar();
-        StartCoroutine(DistribuirCartas());
     }
 
+    // ─────────────────────────────────────────────
+    // CRIAÇÃO E EMBARALHAMENTO
+    // ─────────────────────────────────────────────
     void CriarBaralho()
     {
-        foreach (Card.Suit naipe in System.Enum.GetValues(typeof(Card.Suit)))
+        baralho.Clear();
+
+        foreach (PokerCard.Suit naipe in System.Enum.GetValues(typeof(PokerCard.Suit)))
         {
-            foreach (Card.Value valor in System.Enum.GetValues(typeof(Card.Value)))
+            foreach (PokerCard.Value valor in System.Enum.GetValues(typeof(PokerCard.Value)))
             {
                 GameObject obj = Instantiate(cartaPrefab, posicaoDeck.position, cartaPrefab.transform.rotation);
-                Card carta = obj.GetComponent<Card>();
+                PokerCard carta = obj.GetComponent<PokerCard>();
                 carta.naipe = naipe;
                 carta.valor = valor;
                 carta.VirarParaBaixo();
                 baralho.Add(carta);
-                obj.SetActive(false); // esconde até distribuir
+                obj.SetActive(false);
             }
         }
     }
 
     void Embaralhar()
     {
+        indiceAtual = 0;
+
         for (int i = baralho.Count - 1; i > 0; i--)
         {
             int j = Random.Range(0, i + 1);
-            Card temp = baralho[i];
+            PokerCard temp = baralho[i];
             baralho[i] = baralho[j];
             baralho[j] = temp;
         }
     }
 
-    System.Collections.IEnumerator DistribuirCartas()
+    // ─────────────────────────────────────────────
+    // COMPRAR CARTA (usado pelo GameManager)
+    // ─────────────────────────────────────────────
+    public PokerCard ComprarCarta()
     {
-        yield return new WaitForSeconds(0.5f);
-
-        int index = 0;
-
-        // Distribui 2 cartas para o jogador
-        foreach (Transform slot in posicoesJogador)
+        if (indiceAtual >= baralho.Count)
         {
-            Card carta = baralho[index++];
+            Debug.LogWarning("[Deck] Baralho esgotado!");
+            return null;
+        }
+        return baralho[indiceAtual++];
+    }
+
+    // ─────────────────────────────────────────────
+    // DISTRIBUIR CARTAS PARA OS JOGADORES
+    // ─────────────────────────────────────────────
+    public IEnumerator DistribuirCartasParaJogadores(
+    List<GameManager.Jogador> jogadores, Transform[] slots)
+{
+    yield return new WaitForSeconds(0.5f);
+
+    // Offset para separar as 2 cartas de cada jogador
+    Vector3[] offsets = new Vector3[]
+{
+    new Vector3(-0.7f, 0f, 0.1f),  // carta 1: mais à esquerda
+    new Vector3( 0.7f, 0f, 0.1f)   // carta 2: mais à direita
+};
+
+    for (int rodada = 0; rodada < 2; rodada++)
+    {
+        for (int i = 0; i < jogadores.Count; i++)
+        {
+            PokerCard carta = ComprarCarta();
+            if (carta == null) yield break;
+
+            jogadores[i].mao.Add(carta);
             carta.gameObject.SetActive(true);
             carta.transform.position = posicaoDeck.position;
 
-            // Anima a carta indo até o slot
-            carta.transform.DOMove(slot.position, 0.4f).SetEase(Ease.OutCubic);
-            yield return new WaitForSeconds(0.3f);
-            carta.VirarParaCima();
+            Vector3 destino = slots[i].position + offsets[rodada];
+            carta.transform.DOMove(destino, 0.4f).SetEase(Ease.OutCubic);
+
+            yield return new WaitForSeconds(0.25f);
+
+            if (i == 0) carta.VirarParaCima();
         }
 
-        yield return new WaitForSeconds(0.3f);
+        yield return new WaitForSeconds(0.2f);
+    }
+}
 
-        // Distribui 2 cartas para a IA (viradas para baixo)
-        foreach (Transform slot in posicoesIA)
+    // ─────────────────────────────────────────────
+    // RESETAR BARALHO (nova mão)
+    // ─────────────────────────────────────────────
+    public void ResetarBaralho()
+    {
+        // Desativa e reseta todas as cartas
+        foreach (PokerCard carta in baralho)
         {
-            Card carta = baralho[index++];
-            carta.gameObject.SetActive(true);
+            carta.VirarParaBaixo();
+            carta.gameObject.SetActive(false);
             carta.transform.position = posicaoDeck.position;
-
-            carta.transform.DOMove(slot.position, 0.4f).SetEase(Ease.OutCubic);
-            yield return new WaitForSeconds(0.3f);
         }
+
+        Embaralhar();
     }
 }
